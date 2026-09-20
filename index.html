@@ -145,6 +145,9 @@
   </div>
 
   <script>
+    // Live Cloud Backend on Render
+    const API_BASE_URL = 'https://quant-terminal-9aq7.onrender.com';
+
     let tvChart = null;
     let candleSeries = null;
     let volumeSeries = null;
@@ -196,7 +199,7 @@
 
       debounceTimer = setTimeout(async () => {
         try {
-          const res = await fetch(`http://127.0.0.1:8000/api/search?q=${encodeURIComponent(query)}`);
+          const res = await fetch(`${API_BASE_URL}/api/search?q=${encodeURIComponent(query)}`);
           const data = await res.json();
           renderSuggestions(data.results || []);
         } catch (e) {
@@ -234,14 +237,13 @@
     async function loadStockData(symbol, name) {
       const statusEl = document.getElementById('statusMessage');
       statusEl.className = "text-center text-sm py-2 px-4 rounded-lg bg-slate-900 border border-slate-800 text-slate-400";
-      statusEl.textContent = `Loading analytics and latest news for ${symbol}...`;
+      statusEl.textContent = `Connecting to cloud backend & analyzing ${symbol}... (May take ~20s if server is waking up)`;
       statusEl.classList.remove('hidden');
 
-      // Fetch analytics and news simultaneously
       try {
         const [analyticsRes, newsRes] = await Promise.all([
-          fetch(`http://127.0.0.1:8000/api/analytics/${symbol}`),
-          fetch(`http://127.0.0.1:8000/api/news/${encodeURIComponent(name)}`)
+          fetch(`${API_BASE_URL}/api/analytics/${symbol}`),
+          fetch(`${API_BASE_URL}/api/news/${encodeURIComponent(name)}`)
         ]);
 
         const analyticsData = await analyticsRes.json();
