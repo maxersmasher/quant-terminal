@@ -1,170 +1,127 @@
 import numpy as np
 import pandas as pd
+import yfinance as yf
 
-def generate_educational_guide(metrics: dict, benchmark_name: str) -> list:
-    guide = []
+def get_benchmark_ticker(ticker: str) -> str:
+    """Select appropriate market index based on exchange suffix."""
+    upper = ticker.upper()
+    if upper.endswith(".NS") or upper.endswith(".BO"):
+        return "^NSEI"  # NIFTY 50
+    return "^GSPC"      # S&P 500
 
-    # 1. Beta
-    beta = metrics["beta_against_benchmark"]
-    if beta > 1.2:
-        guide.append({
-            "topic": f"Market Pace (Beta: {beta})",
-            "badge": "Aggressive Swings",
-            "badge_color": "amber",
-            "text": f"This stock swings wider than the {benchmark_name}. A 1% market move historically translates to roughly a {beta}% move for this stock."
+def get_risk_free_rate(ticker: str) -> float:
+    """Return prevailing 10Y sovereign yield benchmark."""
+    upper = ticker.upper()
+    if upper.endswith(".NS") or upper.endswith(".BO"):
+        return 0.070  # ~7.0% Indian 10-Yr G-Sec Yield
+    return 0.042      # ~4.2% US 10-Yr Treasury Yield
+
+def calculate_sortino_ratio(returns: pd.Series, risk_free_rate: float) -> float:
+    """
+    Computes the Annualized Sortino Ratio:
+    S = (R_p - R_f) / sigma_d
+    Penalizes only downside variance below the daily risk-free threshold.
+    """
+    if len(returns) < 2:
+        return 0.0
+
+    daily_rf = risk_free_rate / 252.0
+    excess_returns = returns - daily_rf
+    downside_returns = excess_returns[excess_returns < 0]
+
+    if len(downside_returns) == 0:
+        return 0.0
+
+    # Downside deviation: RMS of negative excess returns
+    downside_variance = np.mean(np.square(downside_returns))
+    daily_downside_dev = np.sqrt(downside_variance)
+    annualized_downside_dev = daily_downside_dev * np.sqrt(252)
+
+    if annualized_downside_dev == 0 or np.isnan(annualized_downside_dev):
+        return 0.0
+
+    annualized_return = returns.mean() * 252
+    sortino = (annualized_return - risk_free_rate) / annualized_downside_dev
+    return round(float(sortino), 2)
+
+def fetch_equity_analytics(ticker: str, period: str = "1y") -> dict:
+    clean_ticker = ticker.strip().upper()
+    benchmark_symbol = get_benchmark_ticker(clean_ticker)
+    rf_rate = get_risk_free_rate(clean_ticker)
+
+    # Download auto-adjusted price series to respect splits and bonus shares
+    asset_df = yf.download(clean_ticker, period=period, interval="1d", auto_adjust=True, progress=False)
+    if asset_df.empty or len(asset_df) < 10:
+        raise ValueError(f"No sufficient market data retrieved for {clean_ticker}")
+
+    bench_df = yf.download(benchmark_symbol, period=period, interval="1d", auto_adjust=True, progress=False)
+
+    # Flatten multi-index columns if returned by yfinance
+    if isinstance(asset_df.columns, pd.MultiIndex):
+        asset_df.columns = asset_df.columns.get_level_values(0)
+    if isinstance(bench_df.columns, pd.MultiIndex):
+        bench_df.columns = bench_df.columns.get_level_values(0)
+
+    # Candlestick payload format for TradingView Lightweight Charts
+    candles = []
+    for idx, row in asset_df.iterrows():
+        candles.append({
+            "time": idx.strftime("%Y-%m-%d"),
+            "open": round(float(row["Open"]), 2),
+            "high": round(float(row["High"]), 2),
+            "low": round(float(row["Low"]), 2),
+            "close": round(float(row["Close"]), 2),
+            "volume": int(row["Volume"]) if "Volume" in row and not np.isnan(row["Volume"]) else 0
         })
-    elif beta < 0.8:
-        guide.append({
-            "topic": f"Market Pace (Beta: {beta})",
-            "badge": "Calmer Mover",
-            "badge_color": "emerald",
-            "text": f"This stock is steadier than the {benchmark_name}. When broad markets panic, defensive stocks like this historically drop less."
-        })
-    else:
-        guide.append({
-            "topic": f"Market Pace (Beta: {beta})",
-            "badge": "Market Benchmark",
-            "badge_color": "sky",
-            "text": f"This stock tends to mirror the pace of {benchmark_name} closely."
-        })
 
-    # 2. Sharpe Ratio
-    sharpe = metrics["sharpe_ratio"]
-    if sharpe >= 1.0:
-        guide.append({
-            "topic": f"Risk vs Reward (Sharpe: {sharpe})",
-            "badge": "Solid Payoff",
-            "badge_color": "emerald",
-            "text": "The returns comfortably beat safe government bond rates (~6.5%) even after factoring in all price volatility."
-        })
-    else:
-        guide.append({
-            "topic": f"Risk vs Reward (Sharpe: {sharpe})",
-            "badge": "Subdued Return",
-            "badge_color": "rose" if sharpe < 0 else "amber",
-            "text": "Returns were thin or negative compared to safe government cash deposits after accounting for the price swings endured."
-        })
+    # Continuous Logarithmic Returns: ln(P_t / P_{t-1})
+    close_series = asset_df["Close"].dropna()
+    log_returns = np.log(close_series / close_series.shift(1)).dropna()
 
-    # 3. Max Drawdown
-    mdd = abs(metrics["max_drawdown_pct"])
-    guide.append({
-        "topic": f"Worst Historical Drop (-{mdd}%)",
-        "badge": "Peak-to-Floor",
-        "badge_color": "rose" if mdd > 20 else "sky",
-        "text": f"The steepest continuous drop from its highest peak was {mdd}%. This shows the worst holding drop an investor had to endure."
-    })
+    # Annualized Historical Volatility
+    daily_vol = float(log_returns.std())
+    annualized_vol = round(daily_vol * np.sqrt(252) * 100, 2)
 
-    # 4. Volume Activity
-    vols = metrics.get("volume_series", [])
-    if len(vols) >= 5:
-        recent_vol = vols[-1]["value"]
-        avg_vol = np.mean([v["value"] for v in vols[-20:]])
-        vol_ratio = round(recent_vol / avg_vol, 1) if avg_vol > 0 else 1.0
+    # Annualized Return & Sharpe Ratio
+    annualized_return = float(log_returns.mean() * 252)
+    annualized_vol_dec = daily_vol * np.sqrt(252)
+    sharpe = round((annualized_return - rf_rate) / annualized_vol_dec, 2) if annualized_vol_dec > 0 else 0.0
 
-        if vol_ratio > 1.5:
-            guide.append({
-                "topic": "Trading Turnover",
-                "badge": f"{vol_ratio}x Above Normal",
-                "badge_color": "emerald",
-                "text": f"Trading volume was {vol_ratio}x higher than usual today, showing heavy institutional or retail participation."
-            })
-        else:
-            guide.append({
-                "topic": "Trading Turnover",
-                "badge": "Normal Volume",
-                "badge_color": "sky",
-                "text": "Daily volume is around regular baseline levels without abnormal institutional spikes."
-            })
+    # Annualized Sortino Ratio (Downside Deviation)
+    sortino = calculate_sortino_ratio(log_returns, rf_rate)
 
-    return guide
+    # Maximum Peak-to-Trough Drawdown
+    cumulative_series = np.exp(log_returns.cumsum())
+    running_peak = cumulative_series.cummax()
+    drawdown_series = (cumulative_series - running_peak) / running_peak
+    max_drawdown = round(float(drawdown_series.min() * 100), 2)
 
+    # Systematic Beta calculation benchmarked against dynamic index
+    beta = 1.0
+    if not bench_df.empty and len(bench_df) > 10:
+        bench_close = bench_df["Close"].dropna()
+        bench_returns = np.log(bench_close / bench_close.shift(1)).dropna()
+        combined = pd.concat([log_returns, bench_returns], axis=1, join="inner").dropna()
+        if len(combined) > 10:
+            cov_matrix = np.cov(combined.iloc[:, 0], combined.iloc[:, 1])
+            cov = cov_matrix[0, 1]
+            bench_var = cov_matrix[1, 1]
+            if bench_var > 0:
+                beta = round(float(cov / bench_var), 2)
 
-def compute_financial_metrics(stock_df: pd.DataFrame, benchmark_df: pd.DataFrame, benchmark_name: str, risk_free_rate: float = 0.065) -> dict:
-    combined = pd.DataFrame({
-        'stock_open': stock_df['Open'],
-        'stock_high': stock_df['High'],
-        'stock_low': stock_df['Low'],
-        'stock_close': stock_df['Close'],
-        'stock_volume': stock_df['Volume'],
-        'bench_close': benchmark_df['Close']
-    }).dropna()
+    current_price = round(float(close_series.iloc[-1]), 2)
+    period_change = round(float(((close_series.iloc[-1] / close_series.iloc[0]) - 1) * 100), 2)
 
-    if len(combined) < 15:
-        raise ValueError("Insufficient trading days to calculate statistics.")
-
-    # 1. Log Returns
-    combined['stock_ret'] = np.log(combined['stock_close'] / combined['stock_close'].shift(1))
-    combined['bench_ret'] = np.log(combined['bench_close'] / combined['bench_close'].shift(1))
-    returns = combined.dropna()
-
-    stock_returns = returns['stock_ret']
-    bench_returns = returns['bench_ret']
-
-    # 2. Cumulative Return
-    start_price = float(combined['stock_close'].iloc[0])
-    latest_price = float(combined['stock_close'].iloc[-1])
-    cumulative_return = (latest_price - start_price) / start_price
-
-    # 3. Volatility
-    daily_volatility = float(stock_returns.std())
-    annualized_volatility = daily_volatility * np.sqrt(252)
-
-    # 4. Beta
-    covariance = np.cov(stock_returns, bench_returns)[0][1]
-    bench_variance = np.var(bench_returns)
-    beta = float(covariance / bench_variance) if bench_variance != 0 else 1.0
-
-    # 5. Sharpe Ratio
-    annualized_stock_return = float(stock_returns.mean()) * 252
-    sharpe_ratio = (
-        (annualized_stock_return - risk_free_rate) / annualized_volatility
-        if annualized_volatility != 0 else 0.0
-    )
-
-    # 6. Max Drawdown
-    peak = combined['stock_close'].cummax()
-    drawdown = (combined['stock_close'] - peak) / peak
-    max_drawdown = float(drawdown.min())
-
-    # 7. Moving Averages
-    combined['sma_15'] = combined['stock_close'].rolling(window=15).mean()
-    combined['ema_15'] = combined['stock_close'].ewm(span=15, adjust=False).mean()
-
-    # 8. Chart Series
-    candlesticks = []
-    sma_series = []
-    ema_series = []
-    volume_series = []
-
-    for date, row in combined.tail(90).iterrows():
-        date_str = date.strftime("%Y-%m-%d")
-        o = round(float(row['stock_open']), 2)
-        c = round(float(row['stock_close']), 2)
-        h = round(float(row['stock_high']), 2)
-        l = round(float(row['stock_low']), 2)
-        v = int(row['stock_volume'])
-
-        candlesticks.append({"time": date_str, "open": o, "high": h, "low": l, "close": c})
-        vol_color = '#10b981' if c >= o else '#f43f5e'
-        volume_series.append({"time": date_str, "value": v, "color": vol_color})
-
-        if not np.isnan(row['sma_15']):
-            sma_series.append({"time": date_str, "value": round(float(row['sma_15']), 2)})
-        if not np.isnan(row['ema_15']):
-            ema_series.append({"time": date_str, "value": round(float(row['ema_15']), 2)})
-
-    core_metrics = {
-        "current_price": round(latest_price, 2),
-        "cumulative_return_pct": round(cumulative_return * 100, 2),
-        "annualized_volatility_pct": round(annualized_volatility * 100, 2),
-        "beta_against_benchmark": round(beta, 2),
-        "sharpe_ratio": round(sharpe_ratio, 2),
-        "max_drawdown_pct": round(max_drawdown * 100, 2),
-        "candlesticks": candlesticks,
-        "sma_15": sma_series,
-        "ema_15": ema_series,
-        "volume_series": volume_series
+    return {
+        "ticker": clean_ticker,
+        "benchmark": benchmark_symbol,
+        "current_price": current_price,
+        "period_change_percent": period_change,
+        "annualized_volatility_percent": annualized_vol,
+        "beta": beta,
+        "sharpe_ratio": sharpe,
+        "sortino_ratio": sortino,
+        "max_drawdown_percent": max_drawdown,
+        "risk_free_rate_percent": round(rf_rate * 100, 2),
+        "candles": candles
     }
-
-    core_metrics["educational_guide"] = generate_educational_guide(core_metrics, benchmark_name)
-    return core_metrics

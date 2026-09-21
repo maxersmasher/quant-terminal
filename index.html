@@ -3,350 +3,327 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Quant Market Terminal</title>
+  <title>Quant Terminal | Equity Risk & Structure</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased p-6">
-  <div class="max-w-6xl mx-auto space-y-6">
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased selection:bg-emerald-500/30 selection:text-emerald-300">
+  <!-- Cold Start / Engine Status Banner -->
+  <div id="status-bar" class="hidden bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-center text-xs font-medium text-amber-400">
+    Initializing remote backend engine on Render... This takes ~30s on a fresh wake-up.
+  </div>
 
-    <!-- Header & Autocomplete Search -->
-    <header class="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-slate-800 pb-5">
+  <div class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+    <!-- Header & Search Toolbar -->
+    <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight text-emerald-400">Quant Market Terminal</h1>
-        <p class="text-sm text-slate-400">Live Prices, Candlestick Volatility & Syndicated News Feed</p>
+        <div class="flex items-center gap-3">
+          <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+            <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            QUANT TERMINAL
+          </h1>
+          <span class="text-xs font-mono uppercase bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700">Production v2.0</span>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">First-principles risk models, downside deviation analysis, and TradingView charting.</p>
       </div>
 
-      <div class="relative w-full md:w-96">
-        <input 
-          id="searchInput" 
-          type="text" 
-          autocomplete="off"
-          placeholder="Type company name (e.g. Apple, Tata, Reliance)..." 
-          class="bg-slate-900 border border-slate-700 text-white px-4 py-2.5 rounded-lg text-sm focus:outline-none focus:border-emerald-500 w-full transition"
-          oninput="onSearchInput(this.value)"
-        />
-        
-        <div 
-          id="suggestionsBox" 
-          class="hidden absolute left-0 right-0 top-full mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl overflow-hidden z-50 max-h-64 overflow-y-auto"
-        ></div>
-      </div>
+      <!-- Quick Ticker Search Bar -->
+      <form id="search-form" class="flex items-center gap-2 w-full md:w-auto">
+        <div class="relative flex-1 md:w-72">
+          <input 
+            type="text" 
+            id="ticker-input" 
+            placeholder="e.g. RELIANCE, TCS, AAPL, NVDA" 
+            class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
+            value="RELIANCE"
+            required
+          />
+        </div>
+        <button 
+          type="submit" 
+          id="search-btn"
+          class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition disabled:opacity-50"
+        >
+          Run Model
+        </button>
+      </form>
     </header>
 
-    <!-- Popular Shortcuts -->
-    <div class="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-      <span>Popular:</span>
-      <button onclick="selectStock('Reliance Industries', 'RELIANCE.NS')" class="bg-slate-900 border border-slate-800 hover:border-emerald-500 text-slate-300 px-3 py-1 rounded-md transition">Reliance</button>
-      <button onclick="selectStock('Tata Motors', 'TATAMOTORS.NS')" class="bg-slate-900 border border-slate-800 hover:border-emerald-500 text-slate-300 px-3 py-1 rounded-md transition">Tata Motors</button>
-      <button onclick="selectStock('Apple Inc.', 'AAPL')" class="bg-slate-900 border border-slate-800 hover:border-emerald-500 text-slate-300 px-3 py-1 rounded-md transition">Apple</button>
-      <button onclick="selectStock('NVIDIA Corporation', 'NVDA')" class="bg-slate-900 border border-slate-800 hover:border-emerald-500 text-slate-300 px-3 py-1 rounded-md transition">Nvidia</button>
-      <button onclick="selectStock('State Bank of India', 'SBIN.NS')" class="bg-slate-900 border border-slate-800 hover:border-emerald-500 text-slate-300 px-3 py-1 rounded-md transition">SBI</button>
-    </div>
+    <!-- Error Callout -->
+    <div id="error-box" class="hidden bg-rose-500/10 border border-rose-500/20 rounded-xl p-4 text-xs text-rose-400"></div>
 
-    <!-- Status Banner -->
-    <div id="statusMessage" class="hidden text-center text-sm py-2 px-4 rounded-lg bg-slate-900 border border-slate-800 text-slate-400"></div>
+    <!-- Key Metrics Grid -->
+    <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <!-- Current Price -->
+      <div class="bg-slate-900/60 border border-slate-800/80 p-3.5 rounded-xl">
+        <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Spot Price</div>
+        <div id="metric-price" class="text-lg font-bold text-slate-100 mt-1 font-mono">--</div>
+        <div id="metric-change" class="text-[11px] text-slate-500 mt-0.5">--</div>
+      </div>
 
-    <!-- Metric Stat Cards -->
-    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-      <div class="bg-slate-900 border border-slate-800 rounded-lg p-3.5">
-        <div class="text-xs text-slate-400">Price</div>
-        <div id="valPrice" class="text-lg font-bold text-white mt-1">-</div>
-        <div class="text-[10px] text-slate-500 mt-0.5">Per share</div>
-      </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-lg p-3.5">
-        <div class="text-xs text-slate-400">6M Return</div>
-        <div id="valReturn" class="text-lg font-bold text-white mt-1">-</div>
-        <div class="text-[10px] text-slate-500 mt-0.5">Cumulative</div>
-      </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-lg p-3.5">
-        <div class="text-xs text-slate-400">Swings (Vol)</div>
-        <div id="valVol" class="text-lg font-bold text-white mt-1">-</div>
-        <div class="text-[10px] text-slate-500 mt-0.5">Annualized</div>
-      </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-lg p-3.5">
-        <div id="betaLabel" class="text-xs text-slate-400">Beta</div>
-        <div id="valBeta" class="text-lg font-bold text-white mt-1">-</div>
-        <div class="text-[10px] text-slate-500 mt-0.5">Market pace</div>
-      </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-lg p-3.5">
-        <div class="text-xs text-slate-400">Sharpe Ratio</div>
-        <div id="valSharpe" class="text-lg font-bold text-white mt-1">-</div>
-        <div class="text-[10px] text-slate-500 mt-0.5">Risk reward</div>
-      </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-lg p-3.5">
-        <div class="text-xs text-slate-400">Max Drop</div>
-        <div id="valMDD" class="text-lg font-bold text-white mt-1">-</div>
-        <div class="text-[10px] text-slate-500 mt-0.5">Peak-to-floor</div>
-      </div>
-    </div>
-
-    <!-- Candlestick + Volume Chart Window -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-        <div>
-          <h2 id="activeCompanyName" class="text-lg font-semibold text-slate-200">Reliance Industries</h2>
-          <span id="tickerBadge" class="text-xs font-mono text-emerald-400">RELIANCE.NS</span>
+      <!-- Sortino Ratio (Downside Risk-Adjusted) -->
+      <div class="bg-slate-900/60 border border-emerald-500/30 p-3.5 rounded-xl relative overflow-hidden">
+        <div class="text-[11px] font-medium text-emerald-400 uppercase tracking-wider flex items-center justify-between">
+          Sortino Ratio
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
         </div>
-        <div class="flex flex-wrap items-center gap-4 text-xs">
-          <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-emerald-500 inline-block rounded-xs"></span> Green (Up)</span>
-          <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-rose-500 inline-block rounded-xs"></span> Red (Down)</span>
-          <span class="inline-flex items-center gap-1.5"><span class="w-3 h-0.5 bg-sky-400 inline-block"></span> 15 SMA</span>
-          <span class="inline-flex items-center gap-1.5"><span class="w-3 h-0.5 bg-amber-400 inline-block"></span> 15 EMA</span>
-        </div>
+        <div id="metric-sortino" class="text-lg font-bold text-emerald-300 mt-1 font-mono">--</div>
+        <div class="text-[11px] text-slate-500 mt-0.5">Downside deviation (&sigma;<sub>d</sub>)</div>
       </div>
 
-      <div id="chartContainer" class="w-full h-[430px] rounded-lg overflow-hidden"></div>
-    </div>
-
-    <!-- 2-COLUMN LAYOUT: Educational Guide (Left) & Real-Time News (Right) -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-      <!-- Left: Plain English Metric Guide -->
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col justify-between">
-        <div>
-          <div class="flex items-center gap-2 mb-4 border-b border-slate-800 pb-3">
-            <span class="text-lg">💡</span>
-            <h2 class="text-base font-semibold text-slate-200">Metric Breakdown</h2>
-          </div>
-          <div id="guideCardsContainer" class="space-y-3">
-            <!-- Injected via JavaScript -->
-          </div>
-        </div>
+      <!-- Systematic Beta -->
+      <div class="bg-slate-900/60 border border-slate-800/80 p-3.5 rounded-xl">
+        <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Beta (&beta;)</div>
+        <div id="metric-beta" class="text-lg font-bold text-slate-100 mt-1 font-mono">--</div>
+        <div id="metric-benchmark" class="text-[11px] text-slate-500 mt-0.5">vs Benchmark</div>
       </div>
 
-      <!-- Right: Live Headlines & News Wire -->
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col justify-between">
-        <div>
-          <div class="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
-            <div class="flex items-center gap-2">
-              <span class="text-lg">📰</span>
-              <h2 class="text-base font-semibold text-slate-200">Latest Company Headlines</h2>
-            </div>
-            <span class="text-[11px] text-slate-400">Click to read original publisher</span>
-          </div>
-
-          <div id="newsFeedContainer" class="space-y-2.5">
-            <div class="text-xs text-slate-500 py-4 text-center">Loading latest news stories...</div>
-          </div>
-        </div>
+      <!-- Annualized Volatility -->
+      <div class="bg-slate-900/60 border border-slate-800/80 p-3.5 rounded-xl">
+        <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Annualized Vol</div>
+        <div id="metric-vol" class="text-lg font-bold text-slate-100 mt-1 font-mono">--</div>
+        <div class="text-[11px] text-slate-500 mt-0.5">&sigma; &times; &radic;252 days</div>
       </div>
 
-    </div>
+      <!-- Sharpe Ratio (Symmetric) -->
+      <div class="bg-slate-900/60 border border-slate-800/80 p-3.5 rounded-xl">
+        <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Sharpe Ratio</div>
+        <div id="metric-sharpe" class="text-lg font-bold text-slate-100 mt-1 font-mono">--</div>
+        <div id="metric-rf" class="text-[11px] text-slate-500 mt-0.5">Total &sigma; penalized</div>
+      </div>
 
-    <!-- Clean Disclaimer Box -->
-    <footer class="bg-slate-950 border border-slate-800 rounded-xl p-4 text-[11px] text-slate-500 space-y-1">
-      <div class="text-slate-400 font-semibold">Educational Project Notice</div>
+      <!-- Maximum Drawdown -->
+      <div class="bg-slate-900/60 border border-slate-800/80 p-3.5 rounded-xl">
+        <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Max Drawdown</div>
+        <div id="metric-mdd" class="text-lg font-bold text-rose-400 mt-1 font-mono">--</div>
+        <div class="text-[11px] text-slate-500 mt-0.5">Peak-to-trough drop</div>
+      </div>
+    </section>
+
+    <!-- Main Chart Window -->
+    <section class="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <span id="chart-title" class="text-sm font-semibold text-slate-200">Price Action & Volume</span>
+          <span class="text-xs text-slate-500 font-mono" id="chart-sub">1-Year Daily OHLC</span>
+        </div>
+        <span class="text-[11px] text-slate-500">Dual pane (Candlesticks & Volume histogram)</span>
+      </div>
+      <div id="chart-container" class="w-full h-[450px] rounded-xl overflow-hidden bg-slate-950/60"></div>
+    </section>
+
+    <!-- Educational Explainer: Why Sortino over Sharpe -->
+    <section class="bg-slate-900/30 border border-slate-800 rounded-xl p-4 text-xs text-slate-400 space-y-2">
+      <div class="text-slate-300 font-semibold flex items-center gap-1.5">
+        <span>Methodology Note: Downside Risk vs. Total Volatility</span>
+      </div>
       <p>
-        This terminal aggregates public market feeds and open-source Google News RSS headlines for research purposes. All news headlines belong to their respective publishers. This platform does not provide investment advice or price targets.
+        The classical <strong>Sharpe Ratio</strong> evaluates excess return against total standard deviation (&sigma;), treating outsized positive trading days and crash events identically. This terminal prioritizes the <strong>Sortino Ratio</strong>, isolating downside deviation (&sigma;<sub>d</sub>) by considering only returns falling below the sovereign risk-free rate. Positive volatility is never penalized.
+      </p>
+    </section>
+
+    <!-- Real-time RSS Market Wire -->
+    <section class="space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+          Live Market News Wire
+        </h2>
+        <span class="text-xs text-slate-500">Syndicated via Google News RSS</span>
+      </div>
+      <div id="news-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div class="text-xs text-slate-500 p-4 border border-dashed border-slate-800 rounded-xl col-span-full text-center">
+          Loading syndicated market dispatches...
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-slate-950 border border-slate-800 rounded-xl p-4 text-[11px] text-slate-500">
+      <div class="text-slate-400 font-semibold mb-1">Academic & Educational Disclaimer</div>
+      <p>
+        Designed for quantitative portfolio analytics and risk modeling. Market quotes are subject to exchange delays. All news dispatches link directly to originating publications. Not financial or investment advice.
       </p>
     </footer>
-
   </div>
 
   <script>
-    // Live Cloud Backend on Render
-    const API_BASE_URL = 'https://quant-terminal-9aq7.onrender.com';
-
-    let tvChart = null;
+    const API_BASE = "https://quant-terminal-9aq7.onrender.com";
+    let chart = null;
     let candleSeries = null;
     let volumeSeries = null;
-    let smaLineSeries = null;
-    let emaLineSeries = null;
-    let debounceTimer = null;
 
     function initChart() {
-      const container = document.getElementById('chartContainer');
-      container.innerHTML = '';
-
-      tvChart = LightweightCharts.createChart(container, {
+      const container = document.getElementById("chart-container");
+      chart = LightweightCharts.createChart(container, {
         width: container.clientWidth,
-        height: 430,
-        layout: { background: { color: '#0f172a' }, textColor: '#94a3b8' },
-        grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
-        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-        timeScale: { borderColor: '#334155', timeVisible: true },
-        rightPriceScale: { borderColor: '#334155' },
+        height: 450,
+        layout: {
+          background: { color: "#020617" },
+          textColor: "#94a3b8",
+        },
+        grid: {
+          vertLines: { color: "#0f172a" },
+          horzLines: { color: "#0f172a" },
+        },
+        crosshair: {
+          mode: LightweightCharts.CrosshairMode.Normal,
+        },
+        timeScale: {
+          borderColor: "#1e293b",
+          timeVisible: true,
+        },
       });
 
-      candleSeries = tvChart.addCandlestickSeries({
-        upColor: '#10b981', downColor: '#f43f5e',
-        borderUpColor: '#10b981', borderDownColor: '#f43f5e',
-        wickUpColor: '#10b981', wickDownColor: '#f43f5e',
+      candleSeries = chart.addCandlestickSeries({
+        upColor: "#10b981",
+        downColor: "#f43f5e",
+        borderVisible: false,
+        wickUpColor: "#10b981",
+        wickDownColor: "#f43f5e",
       });
 
-      smaLineSeries = tvChart.addLineSeries({ color: '#38bdf8', lineWidth: 2 });
-      emaLineSeries = tvChart.addLineSeries({ color: '#fbbf24', lineWidth: 2 });
-
-      volumeSeries = tvChart.addHistogramSeries({
-        priceFormat: { type: 'volume' },
-        priceScaleId: '',
+      volumeSeries = chart.addHistogramSeries({
+        priceFormat: { type: "volume" },
+        priceScaleId: "",
+        scaleMargins: {
+          top: 0.8,
+          bottom: 0,
+        },
       });
 
-      volumeSeries.priceScale().applyOptions({
-        scaleMargins: { top: 0.78, bottom: 0 },
-      });
-
-      window.addEventListener('resize', () => {
-        if (tvChart) tvChart.applyOptions({ width: container.clientWidth });
+      window.addEventListener("resize", () => {
+        if (chart) chart.applyOptions({ width: container.clientWidth });
       });
     }
 
-    function onSearchInput(query) {
-      clearTimeout(debounceTimer);
-      const box = document.getElementById('suggestionsBox');
-      if (!query.trim()) { box.classList.add('hidden'); return; }
+    async function loadData(ticker) {
+      const statusEl = document.getElementById("status-bar");
+      const errEl = document.getElementById("error-box");
+      const btn = document.getElementById("search-btn");
 
-      debounceTimer = setTimeout(async () => {
-        try {
-          const res = await fetch(`${API_BASE_URL}/api/search?q=${encodeURIComponent(query)}`);
-          const data = await res.json();
-          renderSuggestions(data.results || []);
-        } catch (e) {
-          box.classList.add('hidden');
+      let resolvedTicker = ticker.trim().toUpperCase();
+      if (!resolvedTicker.includes(".") && !resolvedTicker.startsWith("^")) {
+        const usBluechips = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "TSLA", "META"];
+        if (!usBluechips.includes(resolvedTicker)) {
+          resolvedTicker = `${resolvedTicker}.NS`;
         }
-      }, 300);
-    }
+      }
 
-    function renderSuggestions(list) {
-      const box = document.getElementById('suggestionsBox');
-      if (list.length === 0) { box.classList.add('hidden'); return; }
+      errEl.classList.add("hidden");
+      btn.disabled = true;
+      btn.innerText = "Computing...";
 
-      box.innerHTML = list.map(item => `
-        <div 
-          onclick="selectStock('${item.name.replace(/'/g, "\\'")}', '${item.symbol}')"
-          class="px-4 py-2.5 hover:bg-slate-800 cursor-pointer border-b border-slate-800/60 last:border-0 flex items-center justify-between transition"
-        >
-          <div>
-            <div class="text-sm font-medium text-slate-100">${item.name}</div>
-            <div class="text-xs text-slate-500">${item.exchange}</div>
-          </div>
-          <span class="text-xs font-mono bg-slate-800 text-emerald-400 px-2 py-0.5 rounded border border-slate-700">${item.symbol}</span>
-        </div>
-      `).join('');
-      box.classList.remove('hidden');
-    }
-
-    function selectStock(name, symbol) {
-      document.getElementById('suggestionsBox').classList.add('hidden');
-      document.getElementById('searchInput').value = name;
-      document.getElementById('activeCompanyName').textContent = name;
-      loadStockData(symbol, name);
-    }
-
-    async function loadStockData(symbol, name) {
-      const statusEl = document.getElementById('statusMessage');
-      statusEl.className = "text-center text-sm py-2 px-4 rounded-lg bg-slate-900 border border-slate-800 text-slate-400";
-      statusEl.textContent = `Connecting to cloud backend & analyzing ${symbol}... (May take ~20s if server is waking up)`;
-      statusEl.classList.remove('hidden');
+      const wakeTimer = setTimeout(() => {
+        statusEl.classList.remove("hidden");
+      }, 3500);
 
       try {
-        const [analyticsRes, newsRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/api/analytics/${symbol}`),
-          fetch(`${API_BASE_URL}/api/news/${encodeURIComponent(name)}`)
-        ]);
+        const res = await fetch(`${API_BASE}/api/analytics/${encodeURIComponent(resolvedTicker)}`);
+        clearTimeout(wakeTimer);
+        statusEl.classList.add("hidden");
 
-        const analyticsData = await analyticsRes.json();
-        const newsData = await newsRes.json();
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.detail || "Unable to fetch market data.");
+        }
 
-        if (!analyticsRes.ok) throw new Error(analyticsData.detail || `Server error ${analyticsRes.status}`);
-
-        renderData(analyticsData);
-        renderNews(newsData.articles || []);
-        statusEl.classList.add('hidden');
+        const data = await res.json();
+        renderMetrics(data);
+        renderChart(data.candles);
+        loadNews(data.ticker);
       } catch (err) {
-        statusEl.textContent = `Error: ${err.message}`;
-        statusEl.className = "text-center text-sm py-2 px-4 rounded-lg bg-rose-950/40 border border-rose-800 text-rose-300";
+        clearTimeout(wakeTimer);
+        statusEl.classList.add("hidden");
+        errEl.innerText = `Error: ${err.message}`;
+        errEl.classList.remove("hidden");
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Run Model";
       }
     }
 
-    function renderNews(articles) {
-      const box = document.getElementById('newsFeedContainer');
-      if (!articles || articles.length === 0) {
-        box.innerHTML = '<div class="text-xs text-slate-500 italic py-3 text-center">No recent news headlines found for this company.</div>';
-        return;
-      }
-
-      box.innerHTML = articles.map(item => `
-        <a 
-          href="${item.url}" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          class="block p-3 rounded-lg bg-slate-950/60 border border-slate-800/80 hover:border-emerald-500/50 hover:bg-slate-950 transition group"
-        >
-          <div class="flex items-start justify-between gap-3">
-            <h3 class="text-xs font-medium text-slate-200 group-hover:text-emerald-400 leading-snug line-clamp-2 transition">
-              ${item.title}
-            </h3>
-            <span class="text-slate-600 group-hover:text-emerald-400 transition shrink-0 text-xs">↗</span>
-          </div>
-          <div class="flex items-center gap-2 mt-2 text-[10px] text-slate-500">
-            <span class="font-medium text-slate-400">${item.source}</span>
-            <span>•</span>
-            <span>${item.date}</span>
-          </div>
-        </a>
-      `).join('');
-    }
-
-    function renderData(data) {
-      const m = data.metrics;
-      const isIndia = data.symbol.endsWith('.NS') || data.symbol.endsWith('.BO');
-      const currency = isIndia ? '₹' : '$';
-
-      document.getElementById('tickerBadge').textContent = `${data.symbol} (Benchmark: ${data.benchmark})`;
-      document.getElementById('betaLabel').textContent = `Beta (${data.benchmark})`;
-      document.getElementById('valPrice').textContent = `${currency}${m.current_price.toLocaleString()}`;
+    function renderMetrics(data) {
+      document.getElementById("metric-price").innerText = `${data.current_price.toLocaleString()}`;
       
-      const retEl = document.getElementById('valReturn');
-      retEl.textContent = `${m.cumulative_return_pct > 0 ? '+' : ''}${m.cumulative_return_pct}%`;
-      retEl.className = `text-lg font-bold mt-1 ${m.cumulative_return_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      const changeEl = document.getElementById("metric-change");
+      const sign = data.period_change_percent >= 0 ? "+" : "";
+      changeEl.innerText = `${sign}${data.period_change_percent}% (1Y)`;
+      changeEl.className = data.period_change_percent >= 0 ? "text-[11px] text-emerald-400 mt-0.5" : "text-[11px] text-rose-400 mt-0.5";
 
-      document.getElementById('valVol').textContent = `${m.annualized_volatility_pct}%`;
-      document.getElementById('valBeta').textContent = m.beta_against_benchmark;
-      document.getElementById('valSharpe').textContent = m.sharpe_ratio;
-      document.getElementById('valMDD').textContent = `${m.max_drawdown_pct}%`;
-
-      candleSeries.setData(m.candlesticks);
-      smaLineSeries.setData(m.sma_15);
-      emaLineSeries.setData(m.ema_15);
-      volumeSeries.setData(m.volume_series);
-      tvChart.timeScale().fitContent();
-
-      renderGuide(m.educational_guide || []);
+      document.getElementById("metric-sortino").innerText = data.sortino_ratio;
+      document.getElementById("metric-beta").innerText = data.beta;
+      document.getElementById("metric-benchmark").innerText = `vs ${data.benchmark}`;
+      document.getElementById("metric-vol").innerText = `${data.annualized_volatility_percent}%`;
+      document.getElementById("metric-sharpe").innerText = data.sharpe_ratio;
+      document.getElementById("metric-rf").innerText = `Rf: ${data.risk_free_rate_percent}%`;
+      document.getElementById("metric-mdd").innerText = `${data.max_drawdown_percent}%`;
+      document.getElementById("chart-title").innerText = `${data.ticker} Market Structure`;
     }
 
-    function renderGuide(guideList) {
-      const container = document.getElementById('guideCardsContainer');
-      const colorMap = {
-        emerald: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-        amber: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-        rose: "bg-rose-500/10 text-rose-400 border-rose-500/20",
-        sky: "bg-sky-500/10 text-sky-400 border-sky-500/20"
-      };
+    function renderChart(candles) {
+      if (!candles || candles.length === 0) return;
 
-      container.innerHTML = guideList.map(item => `
-        <div class="bg-slate-950/70 border border-slate-800/80 rounded-lg p-3 hover:border-slate-700 transition">
-          <div class="flex items-center justify-between mb-1.5">
-            <span class="text-xs font-semibold text-slate-200">${item.topic}</span>
-            <span class="text-[10px] font-medium px-2 py-0.5 rounded border ${colorMap[item.badge_color] || colorMap.sky}">${item.badge}</span>
-          </div>
-          <p class="text-[11px] text-slate-400 leading-relaxed">${item.text}</p>
-        </div>
-      `).join('');
+      const candleData = candles.map(c => ({
+        time: c.time,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close
+      }));
+
+      const volumeData = candles.map(c => ({
+        time: c.time,
+        value: c.volume,
+        color: c.close >= c.open ? "rgba(16, 185, 129, 0.25)" : "rgba(244, 63, 94, 0.25)"
+      }));
+
+      candleSeries.setData(candleData);
+      volumeSeries.setData(volumeData);
+      chart.timeScale().fitContent();
     }
 
-    document.addEventListener('click', (e) => {
-      const box = document.getElementById('suggestionsBox');
-      const input = document.getElementById('searchInput');
-      if (!box.contains(e.target) && e.target !== input) {
-        box.classList.add('hidden');
+    async function loadNews(query) {
+      const container = document.getElementById("news-container");
+      container.innerHTML = '<div class="text-xs text-slate-500 p-4 border border-slate-900 rounded-xl col-span-full">Fetching syndicated wires...</div>';
+
+      try {
+        const cleanQuery = query.replace(".NS", "").replace(".BO", "");
+        const res = await fetch(`${API_BASE}/api/news/${encodeURIComponent(cleanQuery)}`);
+        const data = await res.json();
+
+        if (!data.items || data.items.length === 0) {
+          container.innerHTML = '<div class="text-xs text-slate-500 p-4 border border-slate-900 rounded-xl col-span-full">No active news dispatches found.</div>';
+          return;
+        }
+
+        container.innerHTML = data.items.map(item => `
+          <a href="${item.link}" target="_blank" rel="noopener noreferrer" 
+             class="block p-3.5 bg-slate-900/40 hover:bg-slate-900 border border-slate-800/80 hover:border-slate-700 rounded-xl transition group">
+            <div class="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+              <span class="font-medium text-emerald-400">${item.source}</span>
+              <span>${item.pubDate.split(" ").slice(0, 4).join(" ")}</span>
+            </div>
+            <div class="text-xs font-medium text-slate-200 group-hover:text-white line-clamp-2 leading-relaxed">
+              ${item.title}
+            </div>
+          </a>
+        `).join("");
+      } catch {
+        container.innerHTML = '<div class="text-xs text-slate-500 p-4 border border-slate-900 rounded-xl col-span-full">News stream temporarily unavailable.</div>';
       }
+    }
+
+    document.getElementById("search-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const val = document.getElementById("ticker-input").value;
+      if (val) loadData(val);
     });
 
-    window.addEventListener('DOMContentLoaded', () => {
+    // Bootstrapping
+    window.addEventListener("DOMContentLoaded", () => {
       initChart();
-      selectStock('Reliance Industries', 'RELIANCE.NS');
+      loadData("RELIANCE");
     });
   </script>
 </body>
