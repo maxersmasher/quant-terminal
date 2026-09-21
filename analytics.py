@@ -42,9 +42,18 @@ def extract_financial_statements(ticker_obj) -> dict:
         "annual_trend": []
     }
     try:
-        info = ticker_obj.info or {}
+        # 1. Fetch multiples from info safely
+        info = {}
+        try:
+            info = ticker_obj.get_info() or {}
+        except Exception:
+            try:
+                info = ticker_obj.info or {}
+            except Exception:
+                info = {}
+
         fundamentals["multiples"] = {
-            "pe_ratio": round(info.get("trailingPE", 0.0) or 0.0, 2),
+            "pe_ratio": round(info.get("trailingPE", 0.0) or info.get("forwardPE", 0.0) or 0.0, 2),
             "pb_ratio": round(info.get("priceToBook", 0.0) or 0.0, 2),
             "roe": round((info.get("returnOnEquity", 0.0) or 0.0) * 100, 2),
             "debt_to_equity": round(info.get("debtToEquity", 0.0) or 0.0, 2),
@@ -52,29 +61,56 @@ def extract_financial_statements(ticker_obj) -> dict:
             "profit_margin": round((info.get("profitMargins", 0.0) or 0.0) * 100, 2)
         }
 
-        income = ticker_obj.financials
-        cashflow = ticker_obj.cashflow
-        
-        if not income.empty and not cashflow.empty:
+        # 2. Fetch financial statement DataFrames safely
+        try:
+            income = ticker_obj.get_income_stmt()
+        except Exception:
+            income = getattr(ticker_obj, 'financials', pd.DataFrame())
+
+        try:
+            cashflow = ticker_obj.get_cash_flow()
+        except Exception:
+            cashflow = getattr(ticker_obj, 'cashflow', pd.DataFrame())
+
+        def find_row_val(df, candidates, col):
+            if df is None or df.empty:
+                return 0.0
+            for c in candidates:
+                for idx in df.index:
+                    if c.lower() in str(idx).lower():
+                        val = df.loc[idx, col]
+                        if isinstance(val, pd.Series):
+                            val = val.iloc[0]
+                        if pd.notnull(val):
+                            return float(val)
+            return 0.0
+
+        if income is not None and not income.empty:
             years = list(income.columns[:3])
+            ticker_str = str(getattr(ticker_obj, 'ticker', '')).upper()
+            scale = 1e7 if ticker_str.endswith(('.NS', '.BO')) else 1e6
+
             for y in years:
                 year_str = str(y.year) if hasattr(y, 'year') else str(y)[:4]
-                rev = income.loc["Total Revenue", y] if "Total Revenue" in income.index else 0.0
-                pat = income.loc["Net Income", y] if "Net Income" in income.index else 0.0
-                op_income = income.loc["Operating Income", y] if "Operating Income" in income.index else 0.0
-                cfo = cashflow.loc["Operating Cash Flow", y] if "Operating Cash Flow" in cashflow.index else 0.0
-                capex = cashflow.loc["Capital Expenditure", y] if "Capital Expenditure" in cashflow.index else 0.0
-                
+
+                rev = find_row_val(income, ["Total Revenue", "Operating Revenue", "Revenue"], y)
+                pat = find_row_val(income, ["Net Income", "Net Income Common Stockholders", "PAT"], y)
+                op_income = find_row_val(income, ["Operating Income", "Operating Profit", "EBIT"], y)
+
+                cfo = find_row_val(cashflow, ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"], y)
+                capex = find_row_val(cashflow, ["Capital Expenditure", "Capital Expenditures"], y)
+
                 fundamentals["annual_trend"].append({
                     "year": year_str,
-                    "revenue": round(float(rev) / 1e7, 2) if not np.isnan(rev) else 0.0,
-                    "net_income": round(float(pat) / 1e7, 2) if not np.isnan(pat) else 0.0,
-                    "operating_income": round(float(op_income) / 1e7, 2) if not np.isnan(op_income) else 0.0,
-                    "cfo": round(float(cfo) / 1e7, 2) if not np.isnan(cfo) else 0.0,
-                    "fcf": round((float(cfo) + float(capex)) / 1e7, 2) if not np.isnan(cfo) and not np.isnan(capex) else 0.0
+                    "revenue": round(rev / scale, 2),
+                    "operating_income": round(op_income / scale, 2),
+                    "net_income": round(pat / scale, 2),
+                    "cfo": round(cfo / scale, 2),
+                    "fcf": round((cfo + capex) / scale, 2) if (cfo or capex) else 0.0
                 })
     except Exception:
         pass
+
     return fundamentals
 
 def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
