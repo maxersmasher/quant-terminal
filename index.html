@@ -150,22 +150,22 @@
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <div class="text-xs text-slate-400">P/E Ratio</div>
-          <div id="valFundPE" class="text-lg font-bold text-white mt-1">-</div>
+          <div id="valFundPE" class="text-lg font-bold text-white mt-1">--</div>
           <div class="text-[10px] text-slate-500 mt-0.5">Price to Earnings</div>
         </div>
         <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <div class="text-xs text-slate-400">Price to Book</div>
-          <div id="valFundPB" class="text-lg font-bold text-white mt-1">-</div>
+          <div id="valFundPB" class="text-lg font-bold text-white mt-1">--</div>
           <div class="text-[10px] text-slate-500 mt-0.5">Market Cap / Book Value</div>
         </div>
         <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <div class="text-xs text-slate-400">ROE (Return on Equity)</div>
-          <div id="valFundROE" class="text-lg font-bold text-emerald-400 mt-1">-</div>
+          <div id="valFundROE" class="text-lg font-bold text-emerald-400 mt-1">--</div>
           <div class="text-[10px] text-slate-500 mt-0.5">Shareholder Return %</div>
         </div>
         <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <div class="text-xs text-slate-400">Debt to Equity</div>
-          <div id="valFundDE" class="text-lg font-bold text-white mt-1">-</div>
+          <div id="valFundDE" class="text-lg font-bold text-white mt-1">--</div>
           <div class="text-[10px] text-slate-500 mt-0.5">Borrowing Multiplier</div>
         </div>
       </div>
@@ -419,20 +419,19 @@
 
       renderGuide(m.educational_guide || []);
 
-      // Cache fundamentals and render if current view is fundamentals
-      cachedFundamentals = m.fundamentals;
-      if (!document.getElementById('fundViewWrapper').classList.contains('hidden')) {
-        renderFundamentals(cachedFundamentals);
-      }
+      // Cache fundamentals and update tab view
+      cachedFundamentals = m.fundamentals || data.fundamentals;
+      renderFundamentals(cachedFundamentals);
     }
 
     function renderFundamentals(fund) {
       if (!fund) return;
       const m = fund.multiples || {};
-      document.getElementById('valFundPE').textContent = m.pe_ratio || '--';
-      document.getElementById('valFundPB').textContent = m.pb_ratio || '--';
-      document.getElementById('valFundROE').textContent = m.roe ? `${m.roe}%` : '--';
-      document.getElementById('valFundDE').textContent = m.debt_to_equity || '--';
+
+      document.getElementById('valFundPE').textContent = (m.pe_ratio !== undefined && m.pe_ratio !== null) ? m.pe_ratio : '--';
+      document.getElementById('valFundPB').textContent = (m.pb_ratio !== undefined && m.pb_ratio !== null) ? m.pb_ratio : '--';
+      document.getElementById('valFundROE').textContent = (m.roe !== undefined && m.roe !== null && m.roe !== '--') ? `${m.roe}%` : '--';
+      document.getElementById('valFundDE').textContent = (m.debt_to_equity !== undefined && m.debt_to_equity !== null) ? m.debt_to_equity : '--';
 
       const rowsEl = document.getElementById('statementRows');
       if (!fund.annual_trend || fund.annual_trend.length === 0) {
