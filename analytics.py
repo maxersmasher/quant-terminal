@@ -36,32 +36,21 @@ def calculate_sortino_ratio(returns: pd.Series, risk_free_rate: float) -> float:
     sortino = (annualized_return - risk_free_rate) / annualized_downside_dev
     return round(float(sortino), 2)
 
-def extract_financial_statements(ticker_obj) -> dict:
+def extract_financial_statements(ticker_obj, current_price: float = 0.0) -> dict:
     fundamentals = {
-        "multiples": {},
+        "multiples": {
+            "pe_ratio": "--",
+            "pb_ratio": "--",
+            "roe": "--",
+            "debt_to_equity": "--",
+            "operating_margin": "--",
+            "profit_margin": "--"
+        },
         "annual_trend": []
     }
+    
     try:
-        # 1. Fetch multiples from info safely
-        info = {}
-        try:
-            info = ticker_obj.get_info() or {}
-        except Exception:
-            try:
-                info = ticker_obj.info or {}
-            except Exception:
-                info = {}
-
-        fundamentals["multiples"] = {
-            "pe_ratio": round(info.get("trailingPE", 0.0) or info.get("forwardPE", 0.0) or 0.0, 2),
-            "pb_ratio": round(info.get("priceToBook", 0.0) or 0.0, 2),
-            "roe": round((info.get("returnOnEquity", 0.0) or 0.0) * 100, 2),
-            "debt_to_equity": round(info.get("debtToEquity", 0.0) or 0.0, 2),
-            "operating_margin": round((info.get("operatingMargins", 0.0) or 0.0) * 100, 2),
-            "profit_margin": round((info.get("profitMargins", 0.0) or 0.0) * 100, 2)
-        }
-
-        # 2. Fetch financial statement DataFrames safely
+        # 1. Fetch financial statement DataFrames
         try:
             income = ticker_obj.get_income_stmt()
         except Exception:
@@ -71,6 +60,11 @@ def extract_financial_statements(ticker_obj) -> dict:
             cashflow = ticker_obj.get_cash_flow()
         except Exception:
             cashflow = getattr(ticker_obj, 'cashflow', pd.DataFrame())
+
+        try:
+            balance = ticker_obj.get_balance_sheet()
+        except Exception:
+            balance = getattr(ticker_obj, 'balance_sheet', pd.DataFrame())
 
         def find_row_val(df, candidates, col):
             if df is None or df.empty:
@@ -85,6 +79,7 @@ def extract_financial_statements(ticker_obj) -> dict:
                             return float(val)
             return 0.0
 
+        # Multi-year statement highlights
         if income is not None and not income.empty:
             years = list(income.columns[:3])
             ticker_str = str(getattr(ticker_obj, 'ticker', '')).upper()
@@ -94,7 +89,7 @@ def extract_financial_statements(ticker_obj) -> dict:
                 year_str = str(y.year) if hasattr(y, 'year') else str(y)[:4]
 
                 rev = find_row_val(income, ["Total Revenue", "Operating Revenue", "Revenue"], y)
-                pat = find_row_val(income, ["Net Income", "Net Income Common Stockholders", "PAT"], y)
+                pat = find_row_val(income, ["Net Income Common Stockholders", "Net Income", "PAT"], y)
                 op_income = find_row_val(income, ["Operating Income", "Operating Profit", "EBIT"], y)
 
                 cfo = find_row_val(cashflow, ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"], y)
@@ -108,8 +103,65 @@ def extract_financial_statements(ticker_obj) -> dict:
                     "cfo": round(cfo / scale, 2),
                     "fcf": round((cfo + capex) / scale, 2) if (cfo or capex) else 0.0
                 })
-    except Exception:
-        pass
+
+        # 2. Extract Valuation Multiples (Try info first, fallback to direct financial math)
+        info = {}
+        try:
+            info = ticker_obj.get_info() or {}
+        except Exception:
+            try:
+                info = ticker_obj.info or {}
+            except Exception:
+                info = {}
+
+        pe = info.get("trailingPE") or info.get("forwardPE")
+        pb = info.get("priceToBook")
+        roe = info.get("returnOnEquity")
+        de = info.get("debtToEquity")
+
+        # Mathematical fallback from statement data if Yahoo info is blank or blocked
+        if income is not None and not income.empty:
+            latest_col = income.columns[0]
+            latest_pat = find_row_val(income, ["Net Income Common Stockholders", "Net Income", "PAT"], latest_col)
+            latest_rev = find_row_val(income, ["Total Revenue", "Operating Revenue", "Revenue"], latest_col)
+            latest_op = find_row_val(income, ["Operating Income", "Operating Profit", "EBIT"], latest_col)
+
+            equity = find_row_val(balance, ["Stockholders Equity", "Total Equity", "Common Stock Equity"], latest_col)
+            total_debt = find_row_val(balance, ["Total Debt", "Long Term Debt", "Current Debt"], latest_col)
+
+            # Fast market capitalization lookup
+            shares = getattr(getattr(ticker_obj, 'fast_info', None), 'shares', None) or info.get("sharesOutstanding") or 0.0
+            market_cap = (shares * current_price) if (shares and current_price) else (getattr(getattr(ticker_obj, 'fast_info', None), 'market_cap', 0.0) or info.get("marketCap") or 0.0)
+
+            if not pe and market_cap > 0 and latest_pat > 0:
+                pe = round(market_cap / latest_pat, 2)
+            if not pb and market_cap > 0 and equity > 0:
+                pb = round(market_cap / equity, 2)
+            if not roe and equity > 0 and latest_pat != 0:
+                roe = round((latest_pat / equity) * 100, 2)
+            elif roe:
+                roe = round(roe * 100, 2) if roe < 2.0 else round(roe, 2)
+
+            if not de and equity > 0 and total_debt > 0:
+                de = round(total_debt / equity, 2)
+
+            op_margin = round((latest_op / latest_rev) * 100, 2) if (latest_rev and latest_op) else "--"
+            net_margin = round((latest_pat / latest_rev) * 100, 2) if (latest_rev and latest_pat) else "--"
+        else:
+            op_margin = round(info.get("operatingMargins", 0.0) * 100, 2) if info.get("operatingMargins") else "--"
+            net_margin = round(info.get("profitMargins", 0.0) * 100, 2) if info.get("profitMargins") else "--"
+
+        fundamentals["multiples"] = {
+            "pe_ratio": round(float(pe), 2) if pe and pe > 0 else "--",
+            "pb_ratio": round(float(pb), 2) if pb and pb > 0 else "--",
+            "roe": round(float(roe), 2) if roe else "--",
+            "debt_to_equity": round(float(de), 2) if de and de > 0 else "--",
+            "operating_margin": op_margin,
+            "profit_margin": net_margin
+        }
+
+    except Exception as e:
+        print(f"Error extracting statements & multiples: {e}")
 
     return fundamentals
 
@@ -232,7 +284,7 @@ def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
         }
     ]
 
-    fundamentals = extract_financial_statements(ticker_obj)
+    fundamentals = extract_financial_statements(ticker_obj, current_price=current_price)
 
     return {
         "symbol": clean_ticker,
