@@ -39,6 +39,7 @@ def calculate_sortino_ratio(returns: pd.Series, risk_free_rate: float) -> float:
 def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
     clean_ticker = ticker.strip().upper()
     benchmark_symbol = get_benchmark_ticker(clean_ticker)
+    benchmark_name = "NIFTY 50" if benchmark_symbol == "^NSEI" else "S&P 500"
     rf_rate = get_risk_free_rate(clean_ticker)
 
     asset_df = yf.download(clean_ticker, period=period, interval="1d", auto_adjust=True, progress=False)
@@ -109,31 +110,49 @@ def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
     current_price = round(float(close_series.iloc[-1]), 2)
     cumulative_return = round(float(((close_series.iloc[-1] / close_series.iloc[0]) - 1) * 100), 2)
 
-    # 5. Dynamic Educational Guide Breakdown Cards
+    # 5. Layman, Plain-English Explanations for Common Folks
+    # Beta plain English description
+    if beta > 1.2:
+        beta_desc = f"Moves much more wildly than the market ({benchmark_name}). If the market moves 1%, this stock tends to swing by about {beta}%."
+    elif beta < 0.8:
+        beta_desc = f"Much calmer than the general market ({benchmark_name}). It doesn't jump as high during rallies, but it also doesn't fall as hard during market crashes."
+    else:
+        beta_desc = f"Moves pretty much hand-in-hand with the overall market ({benchmark_name}), matching its ups and downs almost 1-for-1."
+
+    # Sortino plain English description
+    if sortino > 1.5:
+        sortino_desc = f"Excellent safety score. It generates great gains while keeping painful down-days and losses to a minimum."
+    elif sortino > 0.5:
+        sortino_desc = f"Decent safety score. The returns are compensating you reasonably well for the bad down-days."
+    elif sortino > 0:
+        sortino_desc = f"Low safety score. You are getting slightly better returns than a safe bank FD, but you are experiencing regular red days."
+    else:
+        sortino_desc = f"Negative safety score. The drops and red days outweigh the gains; keeping money in a risk-free government bond gave a better return."
+
     guide = [
         {
-            "topic": "Sortino Ratio (Downside Deviation)",
+            "topic": "Sortino Ratio (The 'Bad Volatility' Score)",
             "badge": f"{sortino} Score",
             "badge_color": "emerald" if sortino >= 1.0 else "amber",
-            "text": f"Unlike Sharpe which treats large up-days as risk, Sortino isolates downside deviation (negative excess returns below {round(rf_rate*100, 1)}% risk-free rate). A score of {sortino} indicates {'solid' if sortino >= 1.0 else 'moderate'} downside risk-adjusted return."
+            "text": f"{sortino_desc} Unlike basic risk scores that punish a stock just for shooting up fast, Sortino only judges the stock when it actually drops and causes losses."
         },
         {
-            "topic": f"Beta vs {benchmark_symbol}",
-            "badge": f"{beta}x Sensitivity",
+            "topic": f"Beta (Market Reactivity vs {benchmark_name})",
+            "badge": f"{beta}x Pace",
             "badge_color": "rose" if beta > 1.2 else ("emerald" if beta < 0.8 else "sky"),
-            "text": f"Shows how {clean_ticker} moves relative to {benchmark_symbol}. A beta of {beta} means the asset moves approximately {beta}x as wide as broad benchmark swings."
+            "text": beta_desc
         },
         {
-            "topic": "Annualized Volatility (252-day)",
-            "badge": f"{annualized_vol}% Vol",
+            "topic": "Annualized Volatility (Rollercoaster Factor)",
+            "badge": f"{annualized_vol}% Swings",
             "badge_color": "amber" if annualized_vol > 25 else "emerald",
-            "text": f"Standard deviation of daily continuous log-returns scaled by sqrt(252). Current dispersion sits at {annualized_vol}% yearly price variance."
+            "text": f"How bumpy the ride is over a typical year. A score of {annualized_vol}% means you should expect frequent price swings of this magnitude in either direction."
         },
         {
-            "topic": "Maximum Peak Drawdown",
-            "badge": f"{max_drawdown}% Drop",
+            "topic": "Max Drawdown (Worst Fall from the Top)",
+            "badge": f"{max_drawdown}% Fall",
             "badge_color": "rose" if max_drawdown < -20 else "amber",
-            "text": f"The deepest peak-to-trough decline experienced over this 6-month period was {max_drawdown}%, representing the realized worst-case holding loss."
+            "text": f"If you had the worst luck and bought at the exact peak in the last 6 months, you would have seen your investment drop by {max_drawdown}% before it started recovering."
         }
     ]
 
