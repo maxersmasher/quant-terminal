@@ -36,13 +36,55 @@ def calculate_sortino_ratio(returns: pd.Series, risk_free_rate: float) -> float:
     sortino = (annualized_return - risk_free_rate) / annualized_downside_dev
     return round(float(sortino), 2)
 
+def extract_financial_statements(ticker_obj) -> dict:
+    fundamentals = {
+        "multiples": {},
+        "annual_trend": []
+    }
+    try:
+        info = ticker_obj.info or {}
+        fundamentals["multiples"] = {
+            "pe_ratio": round(info.get("trailingPE", 0.0) or 0.0, 2),
+            "pb_ratio": round(info.get("priceToBook", 0.0) or 0.0, 2),
+            "roe": round((info.get("returnOnEquity", 0.0) or 0.0) * 100, 2),
+            "debt_to_equity": round(info.get("debtToEquity", 0.0) or 0.0, 2),
+            "operating_margin": round((info.get("operatingMargins", 0.0) or 0.0) * 100, 2),
+            "profit_margin": round((info.get("profitMargins", 0.0) or 0.0) * 100, 2)
+        }
+
+        income = ticker_obj.financials
+        cashflow = ticker_obj.cashflow
+        
+        if not income.empty and not cashflow.empty:
+            years = list(income.columns[:3])
+            for y in years:
+                year_str = str(y.year) if hasattr(y, 'year') else str(y)[:4]
+                rev = income.loc["Total Revenue", y] if "Total Revenue" in income.index else 0.0
+                pat = income.loc["Net Income", y] if "Net Income" in income.index else 0.0
+                op_income = income.loc["Operating Income", y] if "Operating Income" in income.index else 0.0
+                cfo = cashflow.loc["Operating Cash Flow", y] if "Operating Cash Flow" in cashflow.index else 0.0
+                capex = cashflow.loc["Capital Expenditure", y] if "Capital Expenditure" in cashflow.index else 0.0
+                
+                fundamentals["annual_trend"].append({
+                    "year": year_str,
+                    "revenue": round(float(rev) / 1e7, 2) if not np.isnan(rev) else 0.0,
+                    "net_income": round(float(pat) / 1e7, 2) if not np.isnan(pat) else 0.0,
+                    "operating_income": round(float(op_income) / 1e7, 2) if not np.isnan(op_income) else 0.0,
+                    "cfo": round(float(cfo) / 1e7, 2) if not np.isnan(cfo) else 0.0,
+                    "fcf": round((float(cfo) + float(capex)) / 1e7, 2) if not np.isnan(cfo) and not np.isnan(capex) else 0.0
+                })
+    except Exception:
+        pass
+    return fundamentals
+
 def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
     clean_ticker = ticker.strip().upper()
     benchmark_symbol = get_benchmark_ticker(clean_ticker)
     benchmark_name = "NIFTY 50" if benchmark_symbol == "^NSEI" else "S&P 500"
     rf_rate = get_risk_free_rate(clean_ticker)
 
-    asset_df = yf.download(clean_ticker, period=period, interval="1d", auto_adjust=True, progress=False)
+    ticker_obj = yf.Ticker(clean_ticker)
+    asset_df = ticker_obj.history(period=period, auto_adjust=True)
     if asset_df.empty or len(asset_df) < 10:
         raise ValueError(f"No sufficient market data found for symbol '{clean_ticker}'")
 
@@ -110,8 +152,7 @@ def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
     current_price = round(float(close_series.iloc[-1]), 2)
     cumulative_return = round(float(((close_series.iloc[-1] / close_series.iloc[0]) - 1) * 100), 2)
 
-    # 5. Layman, Plain-English Explanations for Common Folks
-    # Beta plain English description
+    # 5. Layman, Plain-English Explanations
     if beta > 1.2:
         beta_desc = f"Moves much more wildly than the market ({benchmark_name}). If the market moves 1%, this stock tends to swing by about {beta}%."
     elif beta < 0.8:
@@ -119,15 +160,14 @@ def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
     else:
         beta_desc = f"Moves pretty much hand-in-hand with the overall market ({benchmark_name}), matching its ups and downs almost 1-for-1."
 
-    # Sortino plain English description
     if sortino > 1.5:
-        sortino_desc = f"Excellent safety score. It generates great gains while keeping painful down-days and losses to a minimum."
+        sortino_desc = "Excellent safety score. It generates great gains while keeping painful down-days and losses to a minimum."
     elif sortino > 0.5:
-        sortino_desc = f"Decent safety score. The returns are compensating you reasonably well for the bad down-days."
+        sortino_desc = "Decent safety score. The returns are compensating you reasonably well for the bad down-days."
     elif sortino > 0:
-        sortino_desc = f"Low safety score. You are getting slightly better returns than a safe bank FD, but you are experiencing regular red days."
+        sortino_desc = "Low safety score. You are getting slightly better returns than a safe bank FD, but you are experiencing regular red days."
     else:
-        sortino_desc = f"Negative safety score. The drops and red days outweigh the gains; keeping money in a risk-free government bond gave a better return."
+        sortino_desc = "Negative safety score. The drops and red days outweigh the gains; keeping money in a risk-free government bond gave a better return."
 
     guide = [
         {
@@ -156,6 +196,8 @@ def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
         }
     ]
 
+    fundamentals = extract_financial_statements(ticker_obj)
+
     return {
         "symbol": clean_ticker,
         "benchmark": benchmark_symbol,
@@ -171,6 +213,7 @@ def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
             "volume_series": volume_series,
             "sma_15": sma_series,
             "ema_15": ema_series,
-            "educational_guide": guide
+            "educational_guide": guide,
+            "fundamentals": fundamentals
         }
     }
