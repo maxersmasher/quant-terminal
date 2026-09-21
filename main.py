@@ -11,7 +11,6 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# Enable CORS for Vercel and local testing
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,10 +33,6 @@ def get_analytics(ticker: str, period: str = "1y"):
 
 @app.get("/api/news/{query}")
 def get_syndicated_news(query: str):
-    """
-    Fetches real-time syndication feeds from Google News RSS.
-    Does not scrape or store text; forwards primary attribution URLs.
-    """
     try:
         encoded_query = urllib.parse.quote(query.strip())
         rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-IN&gl=IN&ceid=IN:en"

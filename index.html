@@ -3,18 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Quant Terminal | Equity Risk & Structure</title>
+  <title>Quant Terminal | Equity Risk Analytics</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased selection:bg-emerald-500/30 selection:text-emerald-300">
-  <!-- Cold Start / Engine Status Banner -->
+  
+  <!-- Telemetry Wake-up Banner -->
   <div id="status-bar" class="hidden bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-center text-xs font-medium text-amber-400">
-    Initializing remote backend engine on Render... This takes ~30s on a fresh wake-up.
+    Initializing Python engine on Render... This takes ~30s on idle instances.
   </div>
 
   <div class="max-w-7xl mx-auto px-4 py-6 space-y-6">
-    <!-- Header & Search Toolbar -->
+    <!-- Header Toolbar -->
     <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
       <div>
         <div class="flex items-center gap-3">
@@ -24,51 +25,48 @@
           </h1>
           <span class="text-xs font-mono uppercase bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700">Production v2.0</span>
         </div>
-        <p class="text-xs text-slate-400 mt-1">First-principles risk models, downside deviation analysis, and TradingView charting.</p>
+        <p class="text-xs text-slate-400 mt-1">First-principles quantitative risk metrics, downside deviation modeling, and TradingView OHLC structure.</p>
       </div>
 
-      <!-- Quick Ticker Search Bar -->
       <form id="search-form" class="flex items-center gap-2 w-full md:w-auto">
-        <div class="relative flex-1 md:w-72">
-          <input 
-            type="text" 
-            id="ticker-input" 
-            placeholder="e.g. RELIANCE, TCS, AAPL, NVDA" 
-            class="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
-            value="RELIANCE"
-            required
-          />
-        </div>
+        <input 
+          type="text" 
+          id="ticker-input" 
+          placeholder="e.g. RELIANCE, TCS, AAPL, NVDA" 
+          class="w-full md:w-72 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
+          value="RELIANCE"
+          required
+        />
         <button 
           type="submit" 
           id="search-btn"
-          class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition disabled:opacity-50"
+          class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-4 py-2 rounded-lg transition disabled:opacity-50"
         >
           Run Model
         </button>
       </form>
     </header>
 
-    <!-- Error Callout -->
+    <!-- Error Notice -->
     <div id="error-box" class="hidden bg-rose-500/10 border border-rose-500/20 rounded-xl p-4 text-xs text-rose-400"></div>
 
-    <!-- Key Metrics Grid -->
+    <!-- Original Key Metrics Grid (Now cleanly housing Sortino) -->
     <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-      <!-- Current Price -->
+      <!-- Spot Price -->
       <div class="bg-slate-900/60 border border-slate-800/80 p-3.5 rounded-xl">
         <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Spot Price</div>
         <div id="metric-price" class="text-lg font-bold text-slate-100 mt-1 font-mono">--</div>
         <div id="metric-change" class="text-[11px] text-slate-500 mt-0.5">--</div>
       </div>
 
-      <!-- Sortino Ratio (Downside Risk-Adjusted) -->
-      <div class="bg-slate-900/60 border border-emerald-500/30 p-3.5 rounded-xl relative overflow-hidden">
+      <!-- Sortino Ratio -->
+      <div class="bg-slate-900/60 border border-emerald-500/40 p-3.5 rounded-xl relative overflow-hidden">
         <div class="text-[11px] font-medium text-emerald-400 uppercase tracking-wider flex items-center justify-between">
           Sortino Ratio
           <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
         </div>
         <div id="metric-sortino" class="text-lg font-bold text-emerald-300 mt-1 font-mono">--</div>
-        <div class="text-[11px] text-slate-500 mt-0.5">Downside deviation (&sigma;<sub>d</sub>)</div>
+        <div class="text-[11px] text-slate-500 mt-0.5">Downside &sigma;<sub>d</sub> adjusted</div>
       </div>
 
       <!-- Systematic Beta -->
@@ -85,14 +83,14 @@
         <div class="text-[11px] text-slate-500 mt-0.5">&sigma; &times; &radic;252 days</div>
       </div>
 
-      <!-- Sharpe Ratio (Symmetric) -->
+      <!-- Sharpe Ratio -->
       <div class="bg-slate-900/60 border border-slate-800/80 p-3.5 rounded-xl">
         <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Sharpe Ratio</div>
         <div id="metric-sharpe" class="text-lg font-bold text-slate-100 mt-1 font-mono">--</div>
         <div id="metric-rf" class="text-[11px] text-slate-500 mt-0.5">Total &sigma; penalized</div>
       </div>
 
-      <!-- Maximum Drawdown -->
+      <!-- Max Drawdown -->
       <div class="bg-slate-900/60 border border-slate-800/80 p-3.5 rounded-xl">
         <div class="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Max Drawdown</div>
         <div id="metric-mdd" class="text-lg font-bold text-rose-400 mt-1 font-mono">--</div>
@@ -104,21 +102,21 @@
     <section class="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-4">
       <div class="flex items-center justify-between mb-3">
         <div class="flex items-center gap-2">
-          <span id="chart-title" class="text-sm font-semibold text-slate-200">Price Action & Volume</span>
+          <span id="chart-title" class="text-sm font-semibold text-slate-200">Price Structure</span>
           <span class="text-xs text-slate-500 font-mono" id="chart-sub">1-Year Daily OHLC</span>
         </div>
         <span class="text-[11px] text-slate-500">Dual pane (Candlesticks & Volume histogram)</span>
       </div>
-      <div id="chart-container" class="w-full h-[450px] rounded-xl overflow-hidden bg-slate-950/60"></div>
+      <div id="chart-container" class="w-full h-[460px] rounded-xl overflow-hidden bg-slate-950"></div>
     </section>
 
-    <!-- Educational Explainer: Why Sortino over Sharpe -->
+    <!-- Methodology Note: Why Sortino over Sharpe -->
     <section class="bg-slate-900/30 border border-slate-800 rounded-xl p-4 text-xs text-slate-400 space-y-2">
-      <div class="text-slate-300 font-semibold flex items-center gap-1.5">
-        <span>Methodology Note: Downside Risk vs. Total Volatility</span>
+      <div class="text-slate-300 font-semibold">
+        Methodology Note: Downside Risk vs. Total Volatility
       </div>
-      <p>
-        The classical <strong>Sharpe Ratio</strong> evaluates excess return against total standard deviation (&sigma;), treating outsized positive trading days and crash events identically. This terminal prioritizes the <strong>Sortino Ratio</strong>, isolating downside deviation (&sigma;<sub>d</sub>) by considering only returns falling below the sovereign risk-free rate. Positive volatility is never penalized.
+      <p class="leading-relaxed">
+        The classical <strong>Sharpe Ratio</strong> evaluates excess return against total standard deviation (&sigma;), treating outsized positive trading days and crash events identically. This terminal includes the <strong>Sortino Ratio</strong> to isolate downside deviation (&sigma;<sub>d</sub>), evaluating only returns falling below the sovereign risk-free rate so upside volatility is not penalized.
       </p>
     </section>
 
@@ -129,20 +127,20 @@
           <span class="w-2 h-2 rounded-full bg-sky-400"></span>
           Live Market News Wire
         </h2>
-        <span class="text-xs text-slate-500">Syndicated via Google News RSS</span>
+        <span class="text-xs text-slate-500">Google News RSS Syndication</span>
       </div>
       <div id="news-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         <div class="text-xs text-slate-500 p-4 border border-dashed border-slate-800 rounded-xl col-span-full text-center">
-          Loading syndicated market dispatches...
+          Loading market dispatches...
         </div>
       </div>
     </section>
 
     <!-- Footer -->
     <footer class="bg-slate-950 border border-slate-800 rounded-xl p-4 text-[11px] text-slate-500">
-      <div class="text-slate-400 font-semibold mb-1">Academic & Educational Disclaimer</div>
+      <div class="text-slate-400 font-semibold mb-1">Academic & Quantitative Research Notice</div>
       <p>
-        Designed for quantitative portfolio analytics and risk modeling. Market quotes are subject to exchange delays. All news dispatches link directly to originating publications. Not financial or investment advice.
+        Engineered for portfolio risk modeling and market structure analysis. Market quotes are subject to standard exchange delays. All news dispatches link directly to original publishers. Not investment advice.
       </p>
     </footer>
   </div>
@@ -155,9 +153,11 @@
 
     function initChart() {
       const container = document.getElementById("chart-container");
+      container.innerHTML = "";
+
       chart = LightweightCharts.createChart(container, {
         width: container.clientWidth,
-        height: 450,
+        height: 460,
         layout: {
           background: { color: "#020617" },
           textColor: "#94a3b8",
@@ -166,13 +166,8 @@
           vertLines: { color: "#0f172a" },
           horzLines: { color: "#0f172a" },
         },
-        crosshair: {
-          mode: LightweightCharts.CrosshairMode.Normal,
-        },
-        timeScale: {
-          borderColor: "#1e293b",
-          timeVisible: true,
-        },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        timeScale: { borderColor: "#1e293b", timeVisible: true },
       });
 
       candleSeries = chart.addCandlestickSeries({
@@ -186,10 +181,7 @@
       volumeSeries = chart.addHistogramSeries({
         priceFormat: { type: "volume" },
         priceScaleId: "",
-        scaleMargins: {
-          top: 0.8,
-          bottom: 0,
-        },
+        scaleMargins: { top: 0.8, bottom: 0 },
       });
 
       window.addEventListener("resize", () => {
@@ -225,7 +217,7 @@
 
         if (!res.ok) {
           const errData = await res.json();
-          throw new Error(errData.detail || "Unable to fetch market data.");
+          throw new Error(errData.detail || "Unable to retrieve asset analytics.");
         }
 
         const data = await res.json();
@@ -235,7 +227,7 @@
       } catch (err) {
         clearTimeout(wakeTimer);
         statusEl.classList.add("hidden");
-        errEl.innerText = `Error: ${err.message}`;
+        errEl.innerText = `Execution Error: ${err.message}`;
         errEl.classList.remove("hidden");
       } finally {
         btn.disabled = false;
@@ -263,6 +255,7 @@
 
     function renderChart(candles) {
       if (!candles || candles.length === 0) return;
+      if (!chart) initChart();
 
       const candleData = candles.map(c => ({
         time: c.time,
@@ -285,7 +278,7 @@
 
     async function loadNews(query) {
       const container = document.getElementById("news-container");
-      container.innerHTML = '<div class="text-xs text-slate-500 p-4 border border-slate-900 rounded-xl col-span-full">Fetching syndicated wires...</div>';
+      container.innerHTML = '<div class="text-xs text-slate-500 p-4 border border-slate-900 rounded-xl col-span-full text-center">Loading wire dispatches...</div>';
 
       try {
         const cleanQuery = query.replace(".NS", "").replace(".BO", "");
@@ -293,7 +286,7 @@
         const data = await res.json();
 
         if (!data.items || data.items.length === 0) {
-          container.innerHTML = '<div class="text-xs text-slate-500 p-4 border border-slate-900 rounded-xl col-span-full">No active news dispatches found.</div>';
+          container.innerHTML = '<div class="text-xs text-slate-500 p-4 border border-slate-900 rounded-xl col-span-full text-center">No active news feeds found.</div>';
           return;
         }
 
@@ -310,7 +303,7 @@
           </a>
         `).join("");
       } catch {
-        container.innerHTML = '<div class="text-xs text-slate-500 p-4 border border-slate-900 rounded-xl col-span-full">News stream temporarily unavailable.</div>';
+        container.innerHTML = '<div class="text-xs text-slate-500 p-4 border border-slate-900 rounded-xl col-span-full text-center">News feed temporarily unavailable.</div>';
       }
     }
 
@@ -320,7 +313,6 @@
       if (val) loadData(val);
     });
 
-    // Bootstrapping
     window.addEventListener("DOMContentLoaded", () => {
       initChart();
       loadData("RELIANCE");
