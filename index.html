@@ -274,32 +274,42 @@
           autoScale: true,
           scaleMargins: {
             top: 0.1,    // 10% breathing room at the top
-            bottom: 0.25 // 25% margin at bottom so candles float above volume
+            bottom: 0.25 // 25% empty floor so candles never collide with volume
           }
         },
+        leftPriceScale: {
+          visible: false, // Hide numeric labels for volume so left side stays clean
+          autoScale: true,
+          scaleMargins: {
+            top: 0.82,   // Volume bars can NEVER exceed bottom 18% of screen
+            bottom: 0
+          }
+        }
       });
 
       candleSeries = tvChart.addCandlestickSeries({
+        priceScaleId: 'right', // Explicitly bind price to right scale
         upColor: '#10b981', downColor: '#f43f5e',
         borderUpColor: '#10b981', borderDownColor: '#f43f5e',
         wickUpColor: '#10b981', wickDownColor: '#f43f5e',
       });
 
-      smaLineSeries = tvChart.addLineSeries({ color: '#38bdf8', lineWidth: 2 });
-      emaLineSeries = tvChart.addLineSeries({ color: '#fbbf24', lineWidth: 2 });
-
-      // Explicitly isolate volume to its own dedicated scale ID
-      volumeSeries = tvChart.addHistogramSeries({
-        priceFormat: { type: 'volume' },
-        priceScaleId: 'volume_scale',
+      smaLineSeries = tvChart.addLineSeries({ 
+        priceScaleId: 'right', 
+        color: '#38bdf8', 
+        lineWidth: 2 
       });
 
-      // Pin volume strictly to the bottom 18% of the viewport
-      tvChart.priceScale('volume_scale').applyOptions({
-        scaleMargins: {
-          top: 0.82,
-          bottom: 0,
-        },
+      emaLineSeries = tvChart.addLineSeries({ 
+        priceScaleId: 'right', 
+        color: '#fbbf24', 
+        lineWidth: 2 
+      });
+
+      // Bind volume strictly to the left scale (isolated from price scaling)
+      volumeSeries = tvChart.addHistogramSeries({
+        priceScaleId: 'left',
+        priceFormat: { type: 'volume' }
       });
 
       window.addEventListener('resize', () => {
