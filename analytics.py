@@ -1,6 +1,23 @@
+import math
 import numpy as np
 import pandas as pd
 import yfinance as yf
+
+def sanitize_json(data):
+    """Recursively replaces NaN, Inf, and -Inf with clean JSON-safe values."""
+    if isinstance(data, dict):
+        return {k: sanitize_json(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [sanitize_json(v) for v in data]
+    elif isinstance(data, float):
+        if math.isnan(data) or math.isinf(data) or np.isnan(data) or np.isinf(data):
+            return 0.0
+        return data
+    elif isinstance(data, (np.floating, np.integer)):
+        if np.isnan(data) or np.isinf(data):
+            return 0.0
+        return float(data)
+    return data
 
 def get_benchmark_ticker(ticker: str) -> str:
     upper = ticker.upper()
@@ -29,11 +46,13 @@ def calculate_sortino_ratio(returns: pd.Series, risk_free_rate: float) -> float:
     daily_downside_dev = np.sqrt(downside_variance)
     annualized_downside_dev = daily_downside_dev * np.sqrt(252)
 
-    if annualized_downside_dev == 0 or np.isnan(annualized_downside_dev):
+    if annualized_downside_dev == 0 or np.isnan(annualized_downside_dev) or np.isinf(annualized_downside_dev):
         return 0.0
 
     annualized_return = returns.mean() * 252
     sortino = (annualized_return - risk_free_rate) / annualized_downside_dev
+    if np.isnan(sortino) or np.isinf(sortino):
+        return 0.0
     return round(float(sortino), 2)
 
 def extract_financial_statements(ticker_obj, current_price: float = 0.0) -> dict:
@@ -50,7 +69,6 @@ def extract_financial_statements(ticker_obj, current_price: float = 0.0) -> dict
     }
 
     try:
-        # 1. Fetch statements safely without crashing
         income = None
         for attr in ['income_stmt', 'financials']:
             try:
@@ -90,8 +108,10 @@ def extract_financial_statements(ticker_obj, current_price: float = 0.0) -> dict
                         val = df.loc[row_name, col]
                         if isinstance(val, (pd.Series, pd.DataFrame)):
                             val = val.iloc[0]
-                        if pd.notnull(val) and not np.isnan(val):
-                            return float(val)
+                        if pd.notnull(val):
+                            v = float(val)
+                            if not math.isnan(v) and not math.isinf(v):
+                                return v
             return 0.0
 
         if income is not None and not income.empty:
@@ -139,7 +159,6 @@ def extract_financial_statements(ticker_obj, current_price: float = 0.0) -> dict
                     "fcf": round(fcf / scale, 2)
                 })
 
-            # Derive multiples
             latest_col = income.columns[0]
             latest_pat = find_val(income, ["Net Income Common", "Net Income Continuous", "Normalized Income", "Net Income"], latest_col)
             latest_rev = find_val(income, ["Total Revenue", "Operating Revenue", "Revenue"], latest_col)
@@ -173,23 +192,35 @@ def extract_financial_statements(ticker_obj, current_price: float = 0.0) -> dict
             shares = getattr(getattr(ticker_obj, 'fast_info', None), 'shares', None) or info.get("sharesOutstanding") or 0.0
             market_cap = (shares * current_price) if (shares > 0 and current_price > 0) else (getattr(getattr(ticker_obj, 'fast_info', None), 'market_cap', 0.0) or info.get("marketCap") or 0.0)
 
-            if (not pe or pe == 0) and market_cap > 0 and latest_pat > 0:
+            if (not pe or pe == 0 or math.isnan(float(pe))) and market_cap > 0 and latest_pat > 0:
                 pe = round(market_cap / latest_pat, 2)
-            if (not pb or pb == 0) and market_cap > 0 and equity > 0:
+            if (not pb or pb == 0 or math.isnan(float(pb))) and market_cap > 0 and equity > 0:
                 pb = round(market_cap / equity, 2)
-            if (not roe or roe == 0) and equity > 0 and latest_pat != 0:
+            if (not roe or roe == 0 or math.isnan(float(roe))) and equity > 0 and latest_pat != 0:
                 roe = round((latest_pat / equity) * 100, 2)
             elif roe:
-                roe = round(roe * 100, 2) if roe < 2.0 else round(roe, 2)
+                r_val = float(roe)
+                roe = round(r_val * 100, 2) if r_val < 2.0 else round(r_val, 2)
 
-            if (not de or de == 0) and equity > 0 and total_debt > 0:
+            if (not de or de == 0 or math.isnan(float(de))) and equity > 0 and total_debt > 0:
                 de = round(total_debt / equity, 2)
 
+            def clean_metric(val):
+                if val is None or val == "--":
+                    return "--"
+                try:
+                    v = float(val)
+                    if math.isnan(v) or math.isinf(v) or v <= 0:
+                        return "--"
+                    return round(v, 2)
+                except Exception:
+                    return "--"
+
             fundamentals["multiples"] = {
-                "pe_ratio": round(float(pe), 2) if (pe and pe > 0) else "--",
-                "pb_ratio": round(float(pb), 2) if (pb and pb > 0) else "--",
-                "roe": round(float(roe), 2) if (roe and roe != 0) else "--",
-                "debt_to_equity": round(float(de), 2) if (de and de > 0) else "--",
+                "pe_ratio": clean_metric(pe),
+                "pb_ratio": clean_metric(pb),
+                "roe": clean_metric(roe),
+                "debt_to_equity": clean_metric(de),
                 "operating_margin": round((latest_op / latest_rev) * 100, 2) if (latest_rev and latest_op) else "--",
                 "profit_margin": round((latest_pat / latest_rev) * 100, 2) if (latest_rev and latest_pat) else "--"
             }
@@ -204,7 +235,6 @@ def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
     benchmark_name = "NIFTY 50" if benchmark_symbol == "^NSEI" else "S&P 500"
     rf_rate = get_risk_free_rate(clean_ticker)
 
-    # 1. Download price history safely
     try:
         asset_df = yf.download(clean_ticker, period=period, interval="1d", auto_adjust=True, progress=False)
     except Exception as e:
@@ -322,7 +352,7 @@ def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
     ticker_obj = yf.Ticker(clean_ticker)
     fundamentals = extract_financial_statements(ticker_obj, current_price=current_price)
 
-    return {
+    payload = {
         "symbol": clean_ticker,
         "benchmark": benchmark_symbol,
         "metrics": {
@@ -341,3 +371,6 @@ def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
             "fundamentals": fundamentals
         }
     }
+
+    # Clean every NaN, inf, or bad float from the dictionary
+    return sanitize_json(payload)
