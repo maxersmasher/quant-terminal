@@ -264,7 +264,14 @@
         grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
         timeScale: { borderColor: '#334155', timeVisible: true },
-        rightPriceScale: { borderColor: '#334155' },
+        rightPriceScale: {
+          borderColor: '#334155',
+          autoScale: true,
+          scaleMargins: {
+            top: 0.1,    // 10% space at top so candles aren't glued to the roof
+            bottom: 0.25 // 25% space at bottom so candles sit cleanly above volume bars
+          }
+        },
       });
 
       candleSeries = tvChart.addCandlestickSeries({
@@ -276,13 +283,17 @@
       smaLineSeries = tvChart.addLineSeries({ color: '#38bdf8', lineWidth: 2 });
       emaLineSeries = tvChart.addLineSeries({ color: '#fbbf24', lineWidth: 2 });
 
+      // Decouple volume completely from the main price scale
       volumeSeries = tvChart.addHistogramSeries({
         priceFormat: { type: 'volume' },
-        priceScaleId: '',
+        priceScaleId: '', // Keeps volume on its own virtual overlay
       });
 
       volumeSeries.priceScale().applyOptions({
-        scaleMargins: { top: 0.78, bottom: 0 },
+        scaleMargins: {
+          top: 0.8,   // Restricts volume bars strictly to the bottom 20%
+          bottom: 0,
+        },
       });
 
       window.addEventListener('resize', () => {
