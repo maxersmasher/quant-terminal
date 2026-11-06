@@ -1,19 +1,32 @@
 import urllib.parse
 import xml.etree.ElementTree as ET
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 from analytics import fetch_equity_analytics
 
 app = FastAPI(title="Quant Market Terminal Backend", version="2.0.0")
 
+# Explicit wildcard CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+# Global catch-all handler so unhandled server errors still carry CORS headers
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    response = JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)},
+    )
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    return response
 
 POPULAR_STOCKS = [
     {"name": "Reliance Industries", "symbol": "RELIANCE.NS", "exchange": "NSE"},
@@ -48,11 +61,8 @@ def search_stocks(q: str = ""):
 
 @app.get("/api/analytics/{symbol}")
 def get_analytics(symbol: str):
-    try:
-        data = fetch_equity_analytics(symbol, period="6mo")
-        return data
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    data = fetch_equity_analytics(symbol, period="6mo")
+    return data
 
 @app.get("/api/news/{query}")
 def get_news(query: str):

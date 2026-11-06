@@ -50,38 +50,37 @@ def extract_financial_statements(ticker_obj, current_price: float = 0.0) -> dict
     }
 
     try:
-        # Load statement DataFrames with broad compatibility
+        # 1. Fetch statements safely without crashing
         income = None
-        for attr in ['income_stmt', 'financials', 'get_income_stmt']:
+        for attr in ['income_stmt', 'financials']:
             try:
-                res = getattr(ticker_obj, attr)
-                income = res() if callable(res) else res
-                if income is not None and not income.empty:
+                res = getattr(ticker_obj, attr, None)
+                if res is not None and not res.empty:
+                    income = res
                     break
             except Exception:
                 continue
 
         cashflow = None
-        for attr in ['cash_flow', 'cashflow', 'get_cash_flow']:
+        for attr in ['cash_flow', 'cashflow']:
             try:
-                res = getattr(ticker_obj, attr)
-                cashflow = res() if callable(res) else res
-                if cashflow is not None and not cashflow.empty:
+                res = getattr(ticker_obj, attr, None)
+                if res is not None and not res.empty:
+                    cashflow = res
                     break
             except Exception:
                 continue
 
         balance = None
-        for attr in ['balance_sheet', 'get_balance_sheet']:
+        for attr in ['balance_sheet']:
             try:
-                res = getattr(ticker_obj, attr)
-                balance = res() if callable(res) else res
-                if balance is not None and not balance.empty:
+                res = getattr(ticker_obj, attr, None)
+                if res is not None and not res.empty:
+                    balance = res
                     break
             except Exception:
                 continue
 
-        # Helper to search index dynamically for fuzzy keyword matches
         def find_val(df, keywords, col):
             if df is None or df.empty:
                 return 0.0
@@ -105,8 +104,6 @@ def extract_financial_statements(ticker_obj, current_price: float = 0.0) -> dict
 
                 rev = find_val(income, ["Total Revenue", "Operating Revenue", "Revenue"], y)
                 op_income = find_val(income, ["Operating Income", "Operating Profit", "EBIT"], y)
-                
-                # Broadened fuzzy tags for Indian PAT and Net Income
                 pat = find_val(income, [
                     "Net Income Common",
                     "Net Income Continuous",
@@ -116,7 +113,6 @@ def extract_financial_statements(ticker_obj, current_price: float = 0.0) -> dict
                     "PAT"
                 ], y)
 
-                # Broadened tags for Operating Cash Flow & CapEx
                 cfo = find_val(cashflow, [
                     "Operating Cash Flow",
                     "Cash Flow From Continuing Operating",
@@ -143,7 +139,7 @@ def extract_financial_statements(ticker_obj, current_price: float = 0.0) -> dict
                     "fcf": round(fcf / scale, 2)
                 })
 
-            # Multiples direct math calculation from latest fiscal column
+            # Derive multiples
             latest_col = income.columns[0]
             latest_pat = find_val(income, ["Net Income Common", "Net Income Continuous", "Normalized Income", "Net Income"], latest_col)
             latest_rev = find_val(income, ["Total Revenue", "Operating Revenue", "Revenue"], latest_col)
@@ -163,7 +159,6 @@ def extract_financial_statements(ticker_obj, current_price: float = 0.0) -> dict
                 "Total Liabilities Net Minority"
             ], latest_col)
 
-            # Try info first
             info = {}
             try:
                 info = ticker_obj.info or {}
@@ -175,11 +170,9 @@ def extract_financial_statements(ticker_obj, current_price: float = 0.0) -> dict
             roe = info.get("returnOnEquity")
             de = info.get("debtToEquity")
 
-            # Fast Info / Shares outstanding to derive Market Cap
             shares = getattr(getattr(ticker_obj, 'fast_info', None), 'shares', None) or info.get("sharesOutstanding") or 0.0
             market_cap = (shares * current_price) if (shares > 0 and current_price > 0) else (getattr(getattr(ticker_obj, 'fast_info', None), 'market_cap', 0.0) or info.get("marketCap") or 0.0)
 
-            # Mathematical Fallback
             if (not pe or pe == 0) and market_cap > 0 and latest_pat > 0:
                 pe = round(market_cap / latest_pat, 2)
             if (not pb or pb == 0) and market_cap > 0 and equity > 0:
@@ -201,7 +194,7 @@ def extract_financial_statements(ticker_obj, current_price: float = 0.0) -> dict
                 "profit_margin": round((latest_pat / latest_rev) * 100, 2) if (latest_rev and latest_pat) else "--"
             }
     except Exception as e:
-        print(f"Statement parser error: {e}")
+        print(f"Non-fatal statement parser warning: {e}")
 
     return fundamentals
 
@@ -211,19 +204,25 @@ def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
     benchmark_name = "NIFTY 50" if benchmark_symbol == "^NSEI" else "S&P 500"
     rf_rate = get_risk_free_rate(clean_ticker)
 
-    ticker_obj = yf.Ticker(clean_ticker)
-    asset_df = ticker_obj.history(period=period, auto_adjust=True)
-    if asset_df.empty or len(asset_df) < 10:
-        raise ValueError(f"No sufficient market data found for symbol '{clean_ticker}'")
+    # 1. Download price history safely
+    try:
+        asset_df = yf.download(clean_ticker, period=period, interval="1d", auto_adjust=True, progress=False)
+    except Exception as e:
+        raise ValueError(f"Failed downloading data for {clean_ticker}: {str(e)}")
 
-    bench_df = yf.download(benchmark_symbol, period=period, interval="1d", auto_adjust=True, progress=False)
+    if asset_df.empty or len(asset_df) < 5:
+        raise ValueError(f"No price data available for symbol '{clean_ticker}'")
+
+    try:
+        bench_df = yf.download(benchmark_symbol, period=period, interval="1d", auto_adjust=True, progress=False)
+    except Exception:
+        bench_df = pd.DataFrame()
 
     if isinstance(asset_df.columns, pd.MultiIndex):
         asset_df.columns = asset_df.columns.get_level_values(0)
     if isinstance(bench_df.columns, pd.MultiIndex):
         bench_df.columns = bench_df.columns.get_level_values(0)
 
-    # Candlesticks & Volume Series
     candlesticks = []
     volume_series = []
     for idx, row in asset_df.iterrows():
@@ -241,7 +240,6 @@ def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
             "color": "rgba(16, 185, 129, 0.3)" if c >= o else "rgba(244, 63, 94, 0.3)"
         })
 
-    # SMA & EMA Overlays
     close_series = asset_df["Close"].dropna()
     sma15 = close_series.rolling(window=15).mean().dropna()
     ema15 = close_series.ewm(span=15, adjust=False).mean().dropna()
@@ -249,12 +247,11 @@ def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
     sma_series = [{"time": idx.strftime("%Y-%m-%d"), "value": round(float(val), 2)} for idx, val in sma15.items()]
     ema_series = [{"time": idx.strftime("%Y-%m-%d"), "value": round(float(val), 2)} for idx, val in ema15.items()]
 
-    # Continuous Logarithmic Returns & Volatility
     log_returns = np.log(close_series / close_series.shift(1)).dropna()
-    daily_vol = float(log_returns.std())
+    daily_vol = float(log_returns.std()) if len(log_returns) > 1 else 0.0
     annualized_vol = round(daily_vol * np.sqrt(252) * 100, 2)
 
-    annualized_return = float(log_returns.mean() * 252)
+    annualized_return = float(log_returns.mean() * 252) if len(log_returns) > 1 else 0.0
     annualized_vol_dec = daily_vol * np.sqrt(252)
     sharpe = round((annualized_return - rf_rate) / annualized_vol_dec, 2) if annualized_vol_dec > 0 else 0.0
     sortino = calculate_sortino_ratio(log_returns, rf_rate)
@@ -262,9 +259,8 @@ def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
     cumulative_series = np.exp(log_returns.cumsum())
     running_peak = cumulative_series.cummax()
     drawdown_series = (cumulative_series - running_peak) / running_peak
-    max_drawdown = round(float(drawdown_series.min() * 100), 2)
+    max_drawdown = round(float(drawdown_series.min() * 100), 2) if not drawdown_series.empty else 0.0
 
-    # Beta
     beta = 1.0
     if not bench_df.empty and len(bench_df) > 10:
         bench_close = bench_df["Close"].dropna()
@@ -280,7 +276,6 @@ def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
     current_price = round(float(close_series.iloc[-1]), 2)
     cumulative_return = round(float(((close_series.iloc[-1] / close_series.iloc[0]) - 1) * 100), 2)
 
-    # Plain English Educational Guides
     if beta > 1.2:
         beta_desc = f"Moves much more wildly than the market ({benchmark_name}). If the market moves 1%, this stock tends to swing by about {beta}%."
     elif beta < 0.8:
@@ -324,6 +319,7 @@ def fetch_equity_analytics(ticker: str, period: str = "6mo") -> dict:
         }
     ]
 
+    ticker_obj = yf.Ticker(clean_ticker)
     fundamentals = extract_financial_statements(ticker_obj, current_price=current_price)
 
     return {
