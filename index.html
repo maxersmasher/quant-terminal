@@ -263,13 +263,18 @@
         layout: { background: { color: '#0f172a' }, textColor: '#94a3b8' },
         grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-        timeScale: { borderColor: '#334155', timeVisible: true },
+        timeScale: { 
+          borderColor: '#334155', 
+          timeVisible: true,
+          fixLeftEdge: true,
+          fixRightEdge: true
+        },
         rightPriceScale: {
           borderColor: '#334155',
           autoScale: true,
           scaleMargins: {
-            top: 0.1,    // 10% space at top so candles aren't glued to the roof
-            bottom: 0.25 // 25% space at bottom so candles sit cleanly above volume bars
+            top: 0.1,    // 10% breathing room at the top
+            bottom: 0.25 // 25% margin at bottom so candles float above volume
           }
         },
       });
@@ -283,15 +288,16 @@
       smaLineSeries = tvChart.addLineSeries({ color: '#38bdf8', lineWidth: 2 });
       emaLineSeries = tvChart.addLineSeries({ color: '#fbbf24', lineWidth: 2 });
 
-      // Decouple volume completely from the main price scale
+      // Explicitly isolate volume to its own dedicated scale ID
       volumeSeries = tvChart.addHistogramSeries({
         priceFormat: { type: 'volume' },
-        priceScaleId: '', // Keeps volume on its own virtual overlay
+        priceScaleId: 'volume_scale',
       });
 
-      volumeSeries.priceScale().applyOptions({
+      // Pin volume strictly to the bottom 18% of the viewport
+      tvChart.priceScale('volume_scale').applyOptions({
         scaleMargins: {
-          top: 0.8,   // Restricts volume bars strictly to the bottom 20%
+          top: 0.82,
           bottom: 0,
         },
       });
@@ -300,7 +306,6 @@
         if (tvChart) tvChart.applyOptions({ width: container.clientWidth });
       });
     }
-
     function onSearchInput(query) {
       clearTimeout(debounceTimer);
       const box = document.getElementById('suggestionsBox');
